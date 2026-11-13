@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agente com Memória</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- TELA DE LOGIN -->
+  <div id="login-screen" class="login-overlay">
+    <div class="login-card">
+      <div class="login-brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 2v20M4.93 4.93l14.14 14.14M2 12h20M4.93 19.07L19.07 4.93"/>
+          <circle cx="12" cy="12" r="3" fill="#111214"/>
+        </svg>
+        <span class="brand-name">agente<span>.ia</span></span>
+      </div>
+
+      <h2 class="login-title">Acesse sua conta</h2>
+      <p class="login-subtitle">Informe seu nome e crie uma senha para iniciar com memória personalizada.</p>
+
+      <form id="login-form" class="login-form">
+        <div class="login-group">
+          <label for="login-nome">Seu nome</label>
+          <input id="login-nome" type="text" placeholder="Ex: João Silva" autocomplete="off" required>
+        </div>
+
+        <div class="login-group">
+          <label for="login-senha">Senha</label>
+          <input id="login-senha" type="password" placeholder="Digite sua senha" required>
+        </div>
+
+        <div class="login-group">
+          <label for="login-confirma">Confirmar senha</label>
+          <input id="login-confirma" type="password" placeholder="Repita a senha" required>
+        </div>
+
+        <div id="login-erro" class="login-error hidden"></div>
+
+        <button type="submit" class="login-btn">Entrar no Agente</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- APLICAÇÃO PRINCIPAL -->
+  <div id="app-principal" class="app-layout hidden">
+    <!-- Barra Lateral -->
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 2v20M4.93 4.93l14.14 14.14M2 12h20M4.93 19.07L19.07 4.93"/>
+            <circle cx="12" cy="12" r="3" fill="#0b0c0d"/>
+          </svg>
+          <span class="brand-name">agente<span>.ia</span></span>
+        </div>
+
+        <button id="nova" type="button" class="new-thread-btn">
+          <span>Novo Tópico</span>
+          <kbd>Ctrl K</kbd>
+        </button>
+
+        <nav class="sidebar-nav">
+          <button type="button" class="nav-item active" data-view="view-chat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Início
+          </button>
+          <button type="button" class="nav-item" data-view="view-memoria">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            Memória SQL
+          </button>
+          <button type="button" class="nav-item" data-view="view-ferramentas">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Ferramentas
+          </button>
+        </nav>
+
+        <!-- Lista de conversas antigas -->
+        <div class="history-section">
+          <div class="history-title">Recentes</div>
+          <div id="lista-conversas" class="history-list"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="user-footer">
+          <div class="status-badge">
+            <span class="status-dot"></span>
+            <span id="user-display-name">Usuário</span>
+          </div>
+          <button id="btn-sair" type="button" class="logout-btn" title="Sair da conta">Sair</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Área Principal -->
+    <main class="main-container">
+      <!-- ABA 1: CHAT (INÍCIO) -->
+      <div id="view-chat" class="content-wrapper view-section">
+        <header class="hero-header">
+          <h1 id="hero-titulo">Como posso ajudar hoje?</h1>
+        </header>
+
+        <div id="chat" aria-live="polite"></div>
+
+        <div class="search-dock">
+          <form id="form">
+            <input id="pergunta" aria-label="Sua mensagem" placeholder="Digite sua mensagem para o agente..." autocomplete="off" required>
+            <div class="form-footer">
+              <div class="form-badges">
+                <span class="mode-pill active">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/></svg>
+                  Agente Pro
+                </span>
+                <span class="mode-pill">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                  memoria.sql
+                </span>
+              </div>
+              <button id="enviar" type="submit" aria-label="Enviar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5"></line>
+                  <polyline points="5 12 12 5 19 12"></polyline>
+                </svg>
+              </button>
+            </div>
+          </form>
+
+          <div class="suggestions">
+            <button type="button" class="chip">Qual é o meu nome?</button>
+            <button type="button" class="chip">Quais ferramentas você tem?</button>
+            <button type="button" class="chip">Lembre que eu prefiro respostas curtas</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ABA 2: MEMÓRIA SQL -->
+      <div id="view-memoria" class="panel-wrapper view-section hidden">
+        <div class="panel-header">
+          <h2>Memória do Banco de Dados</h2>
+          <p>Informações vinculadas à sua sessão atual no MySQL (<code>memoria.sql</code>).</p>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-card">
+            <span class="info-label">Usuário Salvo</span>
+            <strong id="mem-user-name" class="info-value">...</strong>
+          </div>
+          <div class="info-card">
+            <span class="info-label">ID da Sessão Atual</span>
+            <code id="mem-session-id" class="info-value">...</code>
+          </div>
+          <div class="info-card">
+            <span class="info-label">Mensagens</span>
+            <strong id="mem-msg-count" class="info-value">0</strong>
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <div class="panel-box-header">
+            <h3>Registros salvos nesta conversa</h3>
+            <button type="button" id="btn-limpar-lista" class="btn-danger-outline">Limpar lista lateral</button>
+          </div>
+          <div id="mem-preview" class="mem-preview-list"></div>
+        </div>
+      </div>
+
+      <!-- ABA 3: FERRAMENTAS -->
+      <div id="view-ferramentas" class="panel-wrapper view-section hidden">
+        <div class="panel-header">
+          <h2>Ferramentas do Agente</h2>
+          <p>Recursos que a IA aciona automaticamente durante a conversa.</p>
+        </div>
+
+        <div class="tools-grid">
+          <div class="tool-card">
+            <div class="tool-badge">Ativa</div>
+            <h3>Memória Persistente (SQL)</h3>
+            <p>Grava e recupera o histórico completo de mensagens usando o identificador único da sua sessão.</p>
+            <button type="button" class="btn-test-tool" data-prompt="Resuma tudo o que conversamos até agora.">Testar no chat</button>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-badge">Ativa</div>
+            <h3>Consulta de Funções</h3>
+            <p>Permite ao agente consultar dados externos ou executar ações específicas antes de responder.</p>
+            <button type="button" class="btn-test-tool" data-prompt="Quais ferramentas você pode executar agora?">Testar no chat</button>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-badge">Ativa</div>
+            <h3>Identidade do Usuário</h3>
+            <p>Reconhece seu nome cadastrado no login e personaliza as respostas automaticamente.</p>
+            <button type="button" class="btn-test-tool" data-prompt="Qual é o meu nome e o que você lembra sobre mim?">Testar no chat</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
