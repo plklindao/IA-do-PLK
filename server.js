@@ -1,60 +1,14 @@
-// =====================================================================
-// AULA 04 - GABARITO DO PROFESSOR - Agente com memória no MySQL
-// =====================================================================
-// PROFESSOR - o problema que esta aula resolve:
-//   Aulas 01 e 03: a conversa vivia num array no navegador. Recarregou a
-//   página (F5), o agente esqueceu tudo. Demonstrar isso na aula 03 antes
-//   de começar: dizer o nome, dar F5, perguntar o nome.
-//
-// PROFESSOR - a ideia central:
-//   O modelo continua SEM memória. Ele nunca lembra de nada. O que muda
-//   é ONDE guardamos a conversa: antes no navegador, agora no banco.
-//   A cada pergunta: lê o histórico do banco -> manda tudo para o modelo
-//   -> salva a pergunta e a resposta. "Memória" = SELECT + INSERT.
-//
-// PROFESSOR - como rodar:
-//   Uma vez:     mysql -u aluno -paluno123 loja_ia < memoria.sql
-//   Terminal:    cd aula04-memoria && npm install && node server.js
-//   (Não precisa da API da aula 02: o agente lê o MySQL direto.)
-//   Abrir http://localhost:3003
-//
-// PROFESSOR - partir do server.js da aula 03. Os blocos 3 e 4 (ferramentas
-// e laço do agente) são IGUAIS. Novidades: BLOCO 2 (banco) e BLOCO 6 (rotas).
-// =====================================================================
 
-// ---------- BLOCO 1: configuração ----------
 const express = require('express');
 const mysql = require('mysql2/promise');
 const path = require('path');
 
 const app = express();
-const PORTA = 3003;
+const PORTA = 3002;
 const URL_OLLAMA = 'http://localhost:11434/api/chat';
 const MODELO = 'qwen2.5:3b';
 
-// PROFESSOR: quantas mensagens antigas mandamos ao modelo. Não dá para
-// mandar a conversa inteira para sempre: o modelo tem limite de texto
-// (contexto) e fica mais lento a cada mensagem. 20 = últimas 10 trocas.
-// Exercício: baixar para 2 e ver o agente esquecer o começo da conversa.
-const LIMITE_HISTORICO = 20;
-
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-// PROFESSOR: mudou em relação à aula 03 -> a última linha. Sem ela o
-// agente trata "qual é o meu nome?" como pergunta fora da loja e recusa.
-const PROMPT_SISTEMA = `Você é o atendente virtual de uma loja de informática.
-Responda sempre em português, de forma curta.
-Para qualquer pergunta sobre produtos, clientes ou pedidos, use sempre uma ferramenta antes de responder.
-Nunca invente dados: responda apenas com o que as ferramentas devolverem.
-Liste todos os itens que a ferramenta devolver, sem pular nenhum.
-Se a ferramenta devolver uma lista vazia, diga que a loja não tem.
-Lembre do que o cliente já disse nesta conversa (nome, preferências) e use isso nas respostas.`;
-
-// ---------- BLOCO 2: banco e funções de memória (NOVO) ----------
-// PROFESSOR: mesmo usuário e banco da aula 02. A tabela "mensagens" vem
-// do memoria.sql. Olhar a tabela no MySQL durante a aula, com o chat
-// aberto ao lado:  SELECT * FROM mensagens;
+// Mesmo banco e usuário da aula 02. O agente lê o MySQL direto, sem API no meio.
 const banco = mysql.createPool({
   host: 'localhost',
   user: 'root',
@@ -62,33 +16,17 @@ const banco = mysql.createPool({
   database: 'loja_ia'
 });
 
-// Lê as últimas mensagens de uma conversa, da mais antiga para a mais nova.
-// PROFESSOR: o SELECT de dentro pega as 20 MAIS NOVAS (ORDER BY id DESC).
-// O de fora coloca de volta na ordem certa de leitura. Se usar só ASC com
-// LIMIT, viriam as 20 mais ANTIGAS e o agente esqueceria o que é recente.
-async function lerHistorico(conversa) {
-  const [linhas] = await banco.query(
-    `SELECT role, content FROM (
-       SELECT id, role, content FROM mensagens
-       WHERE conversa = ? ORDER BY id DESC LIMIT ?
-     ) AS ultimas ORDER BY id`,
-    [conversa, LIMITE_HISTORICO]
-  );
-  return linhas;
-}
+app.use(express.json()); // para ler o JSON que a página envia
+app.use(express.static(path.join(__dirname, 'public'))); // entrega html, css e js
 
-async function salvarMensagem(conversa, role, content) {
-  await banco.query(
-    'INSERT INTO mensagens (conversa, role, content) VALUES (?, ?, ?)',
-    [conversa, role, content]
-  );
-}
+const PROMPT_SISTEMA = `Você é o atendente virtual de uma loja de informática.
+Responda sempre em português, de forma curta.
+Para qualquer pergunta sobre produtos, clientes ou pedidos, use sempre uma ferramenta antes de responder.
+Nunca invente dados: responda apenas com o que as ferramentas devolverem.
+Liste todos os itens que a ferramenta devolver, sem pular nenhum.
+Se a ferramenta devolver uma lista vazia, diga que a loja não tem.
+Se a pergunta não for sobre a loja, diga que só pode ajudar com assuntos da loja.`;
 
-// ---------- BLOCO 3: funções e ferramentas (igual aula 03) ----------
-// PROFESSOR: as ferramentas leem o MySQL direto (mesmas consultas da aula
-// 02, com "?"). Um servidor só, sem a API da aula 02 no meio.
-// Quem filtra é o SQL (WHERE), não o modelo: modelo pequeno erra ao
-// filtrar lista grande de cabeça.
 const funcoes = {
   listar_produtos: async (args) => {
     let sql = 'SELECT * FROM produtos WHERE 1 = 1';
@@ -185,15 +123,23 @@ const ferramentas = [
   }
 ];
 
-// ---------- BLOCO 4: laço do agente (igual aula 03) ----------
+// ---------- o laço do agente ----------
+
+//   1. Manda a conversa + lista de ferramentas para o modelo.
+//   2. Modelo respondeu texto?  -> acabou, devolve o texto.
+//   3. Modelo pediu ferramenta? -> executa, guarda o resultado na
+//      conversa com role 'tool' e volta ao passo 1.
+// O limite de 5 voltas impede o modelo de ficar pedindo ferramenta
+// para sempre (acontece com modelo pequeno).
+
 async function rodarAgente(mensagens) {
-  const usadas = [];
+  const usadas = []; // nomes das ferramentas usadas, para mostrar na tela
 
   for (let volta = 0; volta < 5; volta++) {
     const resposta = await fetch(URL_OLLAMA, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: MODELO, messages: mensagens, tools: ferramentas, stream: false })
+      body: JSON.stringify({ model: MODELO, messages: mensagens, tools: ferramentas, stream: false, options: { temperature: 0 } })
     });
     if (!resposta.ok) throw new Error('Ollama respondeu HTTP ' + resposta.status);
 
@@ -207,6 +153,7 @@ async function rodarAgente(mensagens) {
     for (const chamada of mensagem.tool_calls) {
       const nome = chamada.function.name;
       const funcao = funcoes[nome];
+   
       const resultado = funcao
         ? await funcao(chamada.function.arguments || {})
         : { erro: 'Ferramenta ' + nome + ' não existe' };
@@ -220,79 +167,28 @@ async function rodarAgente(mensagens) {
   return { resposta: 'Não consegui chegar a uma resposta.', ferramentas: usadas };
 }
 
-// ---------- BLOCO 5: validação ----------
-// PROFESSOR: nunca confiar no que vem do navegador. O id da conversa tem
-// que ser um texto curto e o texto da pergunta não pode ser vazio/gigante.
-function entradaValida(conversa, texto) {
-  return typeof conversa === 'string' && conversa.length > 0 && conversa.length <= 36
-    && typeof texto === 'string' && texto.trim().length > 0 && texto.length <= 2000;
-}
 
-// ---------- BLOCO 6: rotas (NOVO) ----------
-
-// A página chama isto ao abrir, para redesenhar a conversa antiga.
-app.get('/historico/:conversa', async (req, res) => {
-  res.json(await lerHistorico(req.params.conversa));
-});
-
-// PROFESSOR: os 4 passos da memória, nesta ordem:
-//   1. LER o histórico do banco
-//   2. MONTAR: sistema + histórico + pergunta nova
-//   3. RODAR o agente
-//   4. SALVAR pergunta e resposta
-// Salvamos só DEPOIS da resposta: se o Ollama falhar, não fica pergunta
-// sem resposta no banco.
-// Não salvamos as mensagens de ferramenta (role 'tool'): o resultado da
-// banco pode mudar (estoque, pedidos), então o agente consulta de novo.
 app.post('/chat', async (req, res) => {
-  const { conversa, texto } = req.body;
-  if (!entradaValida(conversa, texto)) {
-    return res.status(400).json({ erro: 'Envie conversa e texto.' });
+  const recebidas = Array.isArray(req.body.mensagens) ? req.body.mensagens : [];
+  const conversa = recebidas
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .map((m) => ({ role: m.role, content: m.content }));
+
+  if (conversa.length === 0) {
+    return res.status(400).json({ erro: 'Envie pelo menos uma mensagem.' });
   }
 
-  const historico = await lerHistorico(conversa);                    // 1
-  // PROFESSOR: o histórico vai como TEXTO dentro do prompt de sistema, e
-  // o modelo recebe só a pergunta nova como mensagem. Por quê: com o
-  // histórico em mensagens separadas, o 3b passa a "imitar" as respostas
-  // antigas e responde "não há pedidos" sem consultar nada. Teste real,
-  // conversa de 5 perguntas: com mensagens separadas consultou 2 de 4
-  // vezes; com o histórico em texto, 6 de 6, e lembrou o nome 6 de 6.
-  // Para o aluno: memória = colar a conversa antiga no prompt.
-  const textoHistorico = historico
-    .map((m) => (m.role === 'user' ? 'Cliente: ' : 'Atendente: ') + m.content)
-    .join('\n');
-  const mensagens = [                                                // 2
-    { role: 'system', content: PROMPT_SISTEMA + (historico.length ? '\n\nConversa até agora:\n' + textoHistorico : '') },
-    { role: 'user', content: texto }
-  ];
-  const resultado = await rodarAgente(mensagens);                    // 3
-  await salvarMensagem(conversa, 'user', texto);                     // 4
-  await salvarMensagem(conversa, 'assistant', resultado.resposta);
-
-  res.json(resultado);
+  const mensagens = [{ role: 'system', content: PROMPT_SISTEMA }, ...conversa];
+  res.json(await rodarAgente(mensagens));
 });
 
+// Erros (Ollama desligado, MySQL desligado...) chegam aqui
 app.use((erro, req, res, next) => {
   console.error(erro.message);
   res.status(500).json({ erro: 'Falha no servidor: ' + erro.message });
 });
 
 app.listen(PORTA, () => {
-  console.log('Agente com memória no ar: http://localhost:' + PORTA);
+  console.log('Agente no ar: http://localhost:' + PORTA);
 });
 
-// =====================================================================
-// PROFESSOR - roteiro de demonstração:
-//   1. "Meu nome é João e gosto de produtos de áudio."
-//   2. F5 na página -> a conversa volta na tela.
-//   3. Parar o servidor (Ctrl+C) e ligar de novo.
-//   4. "Qual é o meu nome?" -> deve responder João.
-//   5. Clicar em "Nova conversa" e perguntar o nome -> não sabe.
-//   6. No MySQL: SELECT conversa, role, content FROM mensagens;
-//
-// PROFESSOR - exercícios (não resolvidos aqui):
-//   a) Rota DELETE /historico/:conversa que apaga a conversa do banco,
-//      e um botão "Esquecer tudo" na página.
-//   b) Mudar LIMITE_HISTORICO para 2 e descobrir o que o agente esquece.
-//   c) Mostrar a hora (criado_em) ao lado de cada mensagem antiga.
-// =====================================================================
